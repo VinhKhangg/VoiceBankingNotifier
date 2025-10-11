@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "1003157322056",
+    "project_id": "voice-banking-3078d",
+    "storage_bucket": "voice-banking-3078d.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:1003157322056:android:c0392bfe80b41d16329b7d",
+        "android_client_info": {
+          "package_name": "com.example.bank_kltt"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAJY7mC2ZBaQT91pewSijgPTknl2BVaOJw"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
