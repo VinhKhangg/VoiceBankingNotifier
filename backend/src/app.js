@@ -5,16 +5,16 @@ const cors = require('cors');
 require('dotenv').config(); // Tải biến môi trường
 
 const authRoutes = require('./routes/auth_routes');
-
+const notificationRoutes = require('./routes/notification_routes');
 const app = express();
 
 // Middlewares
 app.use(cors()); // Cho phép frontend gọi API
 app.use(express.json()); // Xử lý body của request dưới dạng JSON
 
-// Routes
-// Tất cả các route trong auth_routes.js sẽ có tiền tố là /api/auth
+// Tất cả các route sẽ có tiền tố là /api/
 app.use('/api/auth', authRoutes);
+app.use('/api/notifications', notificationRoutes);
 
 // Route cơ bản để kiểm tra server có hoạt động không
 app.get('/', (req, res) => {
@@ -22,7 +22,6 @@ app.get('/', (req, res) => {
 });
 
 const PORT = process.env.PORT || 3000;
-
 app.listen(PORT, () => {
-  console.log(`🚀 Server is running on port ${PORT}`);
+  console.log(`Server is running on port ${PORT}`);
 });

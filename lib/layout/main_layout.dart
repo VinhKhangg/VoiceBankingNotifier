@@ -1,8 +1,13 @@
+import 'dart:io';
 import 'package:flutter/material.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:firebase_messaging/firebase_messaging.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
+
 import '../features/transaction/view/transaction_screen.dart';
 import '../features/transaction/view/transaction_stats_screen.dart';
 import '../features/transaction/view/account_screen.dart';
-
+import '../core/widgets/app_background.dart'; // ✅ 1. THÊM IMPORT CHO AppBackground
 
 class MainLayout extends StatefulWidget {
   const MainLayout({Key? key}) : super(key: key);
@@ -15,19 +20,50 @@ class _MainLayoutState extends State<MainLayout> {
   int _currentIndex = 0;
   DateTime? _lastPressed;
 
-  // ✅ 3. Xóa GlobalKey của màn hình lịch sử
   final GlobalKey<TransactionStatsScreenState> _statsKey = GlobalKey();
 
-  // ✅ 4. Cập nhật danh sách màn hình
   late final List<Widget> _screens = [
-    const TransactionNotifierScreen(), // Tab 0: Giao dịch
-    TransactionStatsScreen(key: _statsKey),     // Tab 1: Thống kê
-    const AccountScreen(),                      // Tab 2: Tài khoản
+    const TransactionNotifierScreen(),
+    TransactionStatsScreen(key: _statsKey),
+    const AccountScreen(),
   ];
 
+  @override
+  void initState() {
+    super.initState();
+    _saveDeviceTokenAfterLogin();
+  }
+
+  Future<void> _saveDeviceTokenAfterLogin() async {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) {
+      print("Không tìm thấy người dùng để lưu token.");
+      return;
+    }
+
+    try {
+      String? token = await FirebaseMessaging.instance.getToken();
+      if (token != null) {
+        final userTokensRef = FirebaseFirestore.instance
+            .collection('users')
+            .doc(user.uid)
+            .collection('tokens')
+            .doc(token);
+
+        await userTokensRef.set({
+          'token': token,
+          'createdAt': FieldValue.serverTimestamp(),
+          'platform': Platform.operatingSystem,
+        });
+        print('✅ Device token saved successfully after PIN verification: $token');
+      }
+    } catch (e) {
+      print('❌ Error saving device token in MainLayout: $e');
+    }
+  }
+
+
   void _onTabTapped(int index) {
-    // ✅ 5. Cập nhật logic khi chuyển tab
-    // Chỉ gọi loadStats khi chuyển đến tab Thống kê (index = 1)
     if (_currentIndex != index && index == 1) {
       _statsKey.currentState?.loadStats();
     }
@@ -35,75 +71,60 @@ class _MainLayoutState extends State<MainLayout> {
   }
 
   Future<bool> _onWillPop() async {
-    // Nếu không ở tab "Giao dịch", thì khi bấm back sẽ quay về tab "Giao dịch"
     if (_currentIndex != 0) {
       setState(() => _currentIndex = 0);
-      return false; // Không thoát ứng dụng
+      return false;
     }
-
-    // Nếu đang ở tab "Giao dịch", xử lý bấm 2 lần để thoát
     final now = DateTime.now();
-    if (_lastPressed == null || now.difference(_lastPressed!) > const Duration(seconds: 2)) {
+    if (_lastPressed == null ||
+        now.difference(_lastPressed!) > const Duration(seconds: 2)) {
       _lastPressed = now;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text("Bấm Back thêm lần nữa để thoát")),
+        const SnackBar(
+          content: Text("Bấm Back thêm lần nữa để thoát"),
+          duration: Duration(seconds: 2),
+        ),
       );
-      return false; // Không thoát ứng dụng
+      return false;
     }
-    return true; // Thoát ứng dụng
+    return true;
   }
 
-  BottomNavigationBarItem _buildNavItem(IconData icon, String label, int index,
-      {Color activeColor = Colors.blue, Color inactiveColor = Colors.black54}) {
-    final bool isActive = _currentIndex == index;
+  BottomNavigationBarItem _buildNavItem(IconData icon, String label) {
     return BottomNavigationBarItem(
-      icon: Icon(
-        icon,
-        size: isActive ? 30 : 24,
-        color: isActive ? activeColor : inactiveColor,
-      ),
+      icon: Icon(icon),
       label: label,
     );
   }
 
   @override
   Widget build(BuildContext context) {
-    const Color activeColor = Colors.blue;
-    const Color inactiveColor = Colors.black54;
+    final theme = Theme.of(context);
+    final isDarkMode = theme.brightness == Brightness.dark;
 
-    return WillPopScope(
-      onWillPop: _onWillPop,
-      child: Scaffold(
-        body: IndexedStack(
-          index: _currentIndex,
-          children: _screens,
-        ),
-        bottomNavigationBar: Container(
-          decoration: BoxDecoration(
-            color: Colors.white,
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black.withOpacity(0.1),
-                blurRadius: 6,
-                offset: const Offset(0, -2),
-              ),
-            ],
+    // ✅ 2. BỌC TOÀN BỘ WIDGET BẰNG AppBackground
+    return AppBackground(
+      child: WillPopScope(
+        onWillPop: _onWillPop,
+        child: Scaffold(
+          // ✅ 3. ĐẶT MÀU NỀN CỦA SCAFFOLD THÀNH TRONG SUỐT
+          backgroundColor: Colors.transparent,
+          body: IndexedStack(
+            index: _currentIndex,
+            children: _screens,
           ),
-          child: BottomNavigationBar(
+          bottomNavigationBar: BottomNavigationBar(
             currentIndex: _currentIndex,
             onTap: _onTabTapped,
-            backgroundColor: Colors.white,
+            // Để BottomNavigationBar có nền riêng, không bị trong suốt
+            backgroundColor: theme.cardColor,
+            selectedItemColor: theme.colorScheme.primary,
+            unselectedItemColor: isDarkMode ? Colors.grey[400] : Colors.grey[600],
             type: BottomNavigationBarType.fixed,
-            selectedItemColor: activeColor,
-            unselectedItemColor: inactiveColor,
-            selectedFontSize: 14,
-            unselectedFontSize: 13,
-            showUnselectedLabels: true,
-            // ✅ 6. Cập nhật các mục trong BottomNavigationBar
             items: [
-              _buildNavItem(Icons.swap_horiz, "Giao dịch", 0), // Thay đổi icon cho đẹp hơn
-              _buildNavItem(Icons.pie_chart, "Thống kê", 1),
-              _buildNavItem(Icons.person, "Tài khoản", 2),
+              _buildNavItem(Icons.swap_horiz_rounded, "Giao dịch"),
+              _buildNavItem(Icons.pie_chart_rounded, "Thống kê"),
+              _buildNavItem(Icons.person_rounded, "Tài khoản"),
             ],
           ),
         ),

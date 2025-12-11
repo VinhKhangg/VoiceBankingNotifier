@@ -1,10 +1,5 @@
 import 'package:flutter/material.dart';
 
-// ✅ Đã xóa các import không cần thiết
-// import 'package:firebase_auth/firebase_auth.dart';
-// import '../services/logout_service.dart';
-// import '../features/settings/settings_screen.dart';
-
 class CommonAppBar extends StatelessWidget implements PreferredSizeWidget {
   final String title;
 

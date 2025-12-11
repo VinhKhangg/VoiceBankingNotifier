@@ -1,53 +1,66 @@
+// D:/FileMonHoc/Khoa_Luan_Tot_Nghiep/Project/lib/models/transaction_model.dart
 import 'package:cloud_firestore/cloud_firestore.dart';
+
+enum TransactionType { income, expense }
 
 class TransactionModel {
   final String id;
-  final String senderName;
-  final String accountNumber;
-  final String bankName;
   final double amount;
   final DateTime time;
+  final TransactionType type;
+  final String accountNumber;
+  final String description;
+  final String bankName;
+  final double balanceAfter;
+  final String partnerAccountName;
+  final String destinationBankName;
+  final String destinationAccountNumber;
 
   TransactionModel({
-    this.id = "",
-    required this.senderName,
-    required this.accountNumber,
-    required this.bankName,
+    required this.id,
     required this.amount,
     required this.time,
+    required this.type,
+    required this.accountNumber,
+    required this.description,
+    required this.bankName,
+    required this.balanceAfter,
+    required this.partnerAccountName,
+    required this.destinationBankName,
+    required this.destinationAccountNumber,
   });
 
-  /// Parse Firestore document → Model
   factory TransactionModel.fromFirestore(DocumentSnapshot doc) {
-    final data = doc.data() as Map<String, dynamic>? ?? {};
-
-    final timeField = data['time'];
-
+    final data = doc.data() as Map<String, dynamic>;
     return TransactionModel(
-      id: doc.id,  // 👈 lấy luôn doc.id
-      senderName: data['senderName'] ?? '',
-      accountNumber: data['accountNumber'] ?? '',
-      bankName: data['bankName'] ?? '',
-      amount: (data['amount'] ?? 0).toDouble(),
-      time: timeField is Timestamp
-          ? timeField.toDate()
-          : DateTime.tryParse(timeField.toString()) ?? DateTime.now(),
+      id: doc.id,
+      amount: (data['amount'] as num?)?.toDouble() ?? 0.0,
+      time: (data['time'] as Timestamp?)?.toDate() ?? DateTime.now(),
+      accountNumber: data['accountNumber'] ?? '', // STK của partner
+      type: data['type'] == 'expense'
+          ? TransactionType.expense
+          : TransactionType.income,
+      description: data['description'] ?? 'Không có nội dung',
+      bankName: data['bankName'] ?? 'Ngân hàng không rõ',
+      balanceAfter: (data['balanceAfter'] as num?)?.toDouble() ?? 0.0,
+      partnerAccountName: data['partnerAccountName'] ?? '',
+      destinationBankName: data['destinationBankName'] ?? 'Không rõ',
+      destinationAccountNumber: data['destinationAccountNumber'] ?? '', // ✅ Đọc trường mới
     );
   }
 
-  /// Model → Map để lưu Firestore
-  Map<String, dynamic> toMap() {
+  Map<String, dynamic> toFirestore() {
     return {
-      'senderName': senderName,
-      'accountNumber': accountNumber,
-      'bankName': bankName,
       'amount': amount,
       'time': Timestamp.fromDate(time),
+      'accountNumber': accountNumber,
+      'type': type == TransactionType.expense ? 'expense' : 'income',
+      'description': description,
+      'bankName': bankName,
+      'balanceAfter': balanceAfter,
+      'partnerAccountName': partnerAccountName,
+      'destinationBankName': destinationBankName,
+      'destinationAccountNumber': destinationAccountNumber, // ✅ Ghi trường mới
     };
-  }
-
-  @override
-  String toString() {
-    return "Transaction(id: $id, sender: $senderName, amount: $amount, bank: $bankName, time: $time)";
   }
 }

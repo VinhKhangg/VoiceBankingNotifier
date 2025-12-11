@@ -1,10 +1,11 @@
-// D:/FileMonHoc/Khoa_Luan_Tot_Nghiep/Project/lib/features/auth/enter_pin_screen.dart
-
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
-import '../../../services/database_service.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../../layout/main_layout.dart';
-import 'reset_pin_screen.dart'; // 👈 THÊM IMPORT NÀY
+import 'reset_pin_screen.dart';
+import '../../../services/logout_service.dart';
+import '../../../services/api_service.dart';
+import '../add_bank/manage_linked_accounts_screen.dart';
 
 class EnterPinScreen extends StatefulWidget {
   const EnterPinScreen({Key? key}) : super(key: key);
@@ -35,12 +36,10 @@ class _EnterPinScreenState extends State<EnterPinScreen>
     super.dispose();
   }
 
-  // ✅ Khi người dùng nhập số
   void _onKeyTap(String value) async {
-    if (isLoading) return; // Không cho nhập khi đang xác thực
+    if (isLoading) return;
     if (pin.length < 6) {
       setState(() => pin += value);
-      // Khi đủ 6 số => tự xác thực
       if (pin.length == 6) {
         await _verify();
       }
@@ -50,7 +49,7 @@ class _EnterPinScreenState extends State<EnterPinScreen>
   void _onDelete() {
     if (pin.isNotEmpty) {
       setState(() => pin = pin.substring(0, pin.length - 1));
-      if (isError) setState(() => isError = false); // Xóa trạng thái lỗi khi người dùng sửa
+      if (isError) setState(() => isError = false);
     }
   }
 
@@ -61,41 +60,81 @@ class _EnterPinScreenState extends State<EnterPinScreen>
     });
   }
 
+  // HÀM NÀY ĐÃ ĐƯỢC CẬP NHẬT LOGIC HOÀN CHỈNH
   Future<void> _verify() async {
     setState(() => isLoading = true);
-    final ok = await DatabaseService.verifyPin(pin);
-    if (!mounted) return;
-    if (ok) {
-      Navigator.pushAndRemoveUntil(
-        context,
-        MaterialPageRoute(builder: (_) => const MainLayout()),
-            (route) => false,
-      );
-    } else {
-      setState(() {
-        isError = true;
-        pin = ""; // Xóa PIN sai
-      });
-      _shakeController.forward(from: 0);
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text("❌ Mã PIN không chính xác. Vui lòng thử lại."),
-          backgroundColor: Colors.red,
-          duration: Duration(seconds: 2),
-        ),
-      );
+    try {
+      final response = await callBackendApi('/api/auth/verify-pin', {'pinAttempt': pin});
+      final bool verified = response['verified'] ?? false;
+
+      if (!mounted) return;
+
+      if (verified) {
+        final prefs = await SharedPreferences.getInstance();
+        // Kiểm tra xem có phải là lần thiết lập đầu tiên không
+        final bool isInitialSetup = prefs.getBool('first_pin_entry_pending') ?? false;
+
+        if (isInitialSetup) {
+          // Nếu đúng là lần đầu, xóa cờ đi để lần sau không vào đây nữa
+          await prefs.remove('first_pin_entry_pending');
+          // Và điều hướng đến màn hình liên kết tài khoản ngân hàng
+          Navigator.pushAndRemoveUntil(
+            context,
+            MaterialPageRoute(
+              builder: (_) => const ManageLinkedAccountsScreen(isInitialSetup: true),
+            ),
+                (route) => false,
+          );
+        } else {
+          // Nếu không phải lần đầu, vào thẳng màn hình chính
+          Navigator.pushAndRemoveUntil(
+            context,
+            MaterialPageRoute(builder: (_) => const MainLayout()),
+                (route) => false,
+          );
+        }
+
+      } else {
+        // Xử lý khi PIN sai
+        setState(() {
+          isError = true;
+          pin = "";
+        });
+        _shakeController.forward(from: 0);
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text("❌ Mã PIN không chính xác. Vui lòng thử lại."),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          isError = true;
+          pin = "";
+        });
+        _shakeController.forward(from: 0);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text("❌ Lỗi xác thực PIN: ${e.toString()}"),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => isLoading = false);
     }
-    if (mounted) setState(() => isLoading = false);
   }
 
-  // 🔹 Hiển thị các chấm PIN
+
+  // --- WIDGETS ---
+  // (Phần còn lại của file không thay đổi, bạn có thể giữ nguyên)
   Widget _buildPinDots() {
     return AnimatedBuilder(
       animation: _shakeController,
       builder: (context, child) {
-        // tạo hiệu ứng rung trái-phải khi nhập sai
         final shakeOffset = math.sin(_shakeController.value * math.pi * 6) * 10;
-
         return Transform.translate(
           offset: Offset(shakeOffset, 0),
           child: Row(
@@ -122,7 +161,6 @@ class _EnterPinScreenState extends State<EnterPinScreen>
     );
   }
 
-  // 🔹 Nút bàn phím
   Widget _buildButton(String label, {VoidCallback? onTap, double size = 80}) {
     final bool isAction = label == "Reset" || label == "⌫";
     return Material(
@@ -214,7 +252,19 @@ class _EnterPinScreenState extends State<EnterPinScreen>
                 else
                   const SizedBox(height: 24 + 16.0), // Giữ khoảng trống tương đương
 
-                // 🔴 THÊM MỚI TẠI ĐÂY 🔴
+                TextButton(
+                  onPressed: () => LogoutService.logout(context),
+                  child: const Text(
+                    "Quay về đăng nhập",
+                    style: TextStyle(
+                      color: Colors.grey, // Dùng màu xám cho đỡ nổi bật
+                      fontWeight: FontWeight.w500,
+                      fontSize: 16,
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 8),
+
                 TextButton(
                   onPressed: () {
                     Navigator.push(
@@ -233,8 +283,6 @@ class _EnterPinScreenState extends State<EnterPinScreen>
                     ),
                   ),
                 ),
-                // 🔴 KẾT THÚC PHẦN THÊM MỚI 🔴
-
                 const SizedBox(height: 10),
               ],
             ),

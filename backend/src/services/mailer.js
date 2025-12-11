@@ -39,9 +39,9 @@ const sendOtpEmail = async (toEmail, otp, subject = 'Mã xác thực tài khoả
 
   try {
     await transporter.sendMail(mailOptions);
-    console.log(`✅ OTP email sent successfully to ${toEmail} with subject: "${subject}"`);
+    console.log(`OTP email sent successfully to ${toEmail} with subject: "${subject}"`);
   } catch (error) {
-    console.error(`❌ Error sending email to ${toEmail}:`, error);
+    console.error(`Error sending email to ${toEmail}:`, error);
     // Ném lỗi ra ngoài để controller có thể bắt và xử lý
     throw new Error('Không thể gửi email OTP. Vui lòng kiểm tra lại cấu hình email trong file .env');
   }

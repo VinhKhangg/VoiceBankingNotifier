@@ -44,7 +44,7 @@ Xây dựng một ứng dụng di động hoàn chỉnh, an toàn và có trải
 -   Một máy ảo Android (Android Emulator) hoặc thiết bị Android thật.
 -   Tài khoản Firebase và tài khoản email (Gmail) để cấu hình backend.
 
-### Bước 1: Cấu hình Backend
+### Chạy dự án
 
 1.  Di chuyển vào terminal chạy lệnh:
 - cd backend

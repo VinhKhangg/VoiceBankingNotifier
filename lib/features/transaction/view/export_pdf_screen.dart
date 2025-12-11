@@ -35,253 +35,158 @@ class _ExportPdfScreenState extends State<ExportPdfScreen> {
 
     if (picked != null) {
       setState(() {
-        if (!selectedMonths.any(
-                (m) => m.year == picked.year && m.month == picked.month)) {
+        if (!selectedMonths.any((m) => m.year == picked.year && m.month == picked.month)) {
           selectedMonths.add(picked);
           savedPath = null;
         }
       });
-
-      // Load dữ liệu để preview
-      final transactions = await DatabaseService.getAllTransactions();
-      final filtered = transactions.where((tx) => selectedMonths.any(
-              (m) => tx.time.year == m.year && tx.time.month == m.month)).toList();
-
-      setState(() {
-        previewTransactions = filtered;
-      });
+      _loadPreviewData();
     }
+  }
+
+  Future<void> _loadPreviewData() async {
+    final transactions = await DatabaseService.getAllTransactions();
+    final filtered = transactions.where((tx) => selectedMonths.any(
+            (m) => tx.time.year == m.year && tx.time.month == m.month)).toList();
+    setState(() {
+      previewTransactions = filtered;
+    });
   }
 
   Future<void> _exportPdf() async {
     if (selectedMonths.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text("⚠️ Vui lòng chọn ít nhất một tháng")),
-      );
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("⚠️ Vui lòng chọn tháng")));
       return;
     }
-
     if (!await Permission.manageExternalStorage.request().isGranted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text("❌ Không có quyền ghi file vào Download")),
-      );
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("❌ Không có quyền ghi file")));
       return;
     }
 
-    setState(() {
-      isExporting = true;
-      savedPath = null;
-    });
+    setState(() => isExporting = true);
 
     try {
-      final roboto = pw.Font.ttf(
-        await rootBundle.load('assets/fonts/Roboto-VariableFont_wdth,wght.ttf'),
-      );
+      final roboto = pw.Font.ttf(await rootBundle.load('assets/fonts/Roboto-VariableFont_wdth,wght.ttf'));
+      final pdf = pw.Document(theme: pw.ThemeData.withFont(base: roboto, bold: roboto));
 
-      final pdf = pw.Document(
-        theme: pw.ThemeData.withFont(base: roboto, bold: roboto),
-      );
-
-      final monthLabels = selectedMonths
-          .map((m) => DateFormat('MM/yyyy').format(m))
-          .join(", ");
-      final headers = ['Ngày', 'Số TK', 'Ngân hàng', 'Người gửi', 'Số tiền'];
-      final rows = previewTransactions.map((tx) => [
-        DateFormat('dd/MM/yyyy HH:mm').format(tx.time),
-        tx.accountNumber,
-        tx.bankName,
-        tx.senderName,
-        NumberFormat.currency(locale: 'vi_VN', symbol: '₫').format(tx.amount),
-      ]).toList();
+      final monthLabels = selectedMonths.map((m) => DateFormat('MM/yyyy').format(m)).join(", ");
+      final headers = ['ID Giao dịch', 'Ngày', 'Loại', 'Số TK', 'Số tiền'];
+      final rows = previewTransactions.map((tx) {
+        final isIncome = tx.type == TransactionType.income;
+        return [
+          tx.id.substring(0, 10), // Rút gọn ID
+          DateFormat('dd/MM/yyyy HH:mm').format(tx.time),
+          isIncome ? 'Nhận tiền' : 'Trừ tiền',
+          tx.accountNumber,
+          "${isIncome ? '+' : '-'} ${NumberFormat.currency(locale: 'vi_VN', symbol: '₫').format(tx.amount)}",
+        ];
+      }).toList();
 
       pdf.addPage(
         pw.MultiPage(
           pageFormat: PdfPageFormat.a4,
           build: (context) => [
-            pw.Text(
-              'Danh sách giao dịch các tháng: $monthLabels',
-              style: pw.TextStyle(fontSize: 18, fontWeight: pw.FontWeight.bold),
+            pw.Header(level: 0, child: pw.Text('Sao kê giao dịch tháng: $monthLabels')),
+            pw.Table.fromTextArray(
+              headers: headers,
+              data: rows,
+              border: pw.TableBorder.all(color: PdfColors.grey300),
+              headerStyle: pw.TextStyle(fontWeight: pw.FontWeight.bold),
+              headerDecoration: const pw.BoxDecoration(color: PdfColors.blue50),
+              cellAlignments: {
+                4: pw.Alignment.centerRight,
+              },
             ),
-            pw.SizedBox(height: 12),
-            if (rows.isEmpty)
-              pw.Text('Không có giao dịch nào trong các tháng đã chọn.')
-            else
-              pw.Table.fromTextArray(
-                headers: headers,
-                data: rows,
-                headerStyle: pw.TextStyle(fontWeight: pw.FontWeight.bold),
-                headerDecoration: const pw.BoxDecoration(color: PdfColors.blue50),
-                cellStyle: const pw.TextStyle(fontSize: 11),
-                cellAlignment: pw.Alignment.centerLeft,
-                border: pw.TableBorder.all(color: PdfColors.grey300, width: 0.5),
-                headerAlignment: pw.Alignment.center,
-              ),
           ],
         ),
       );
 
       final downloadsDir = Directory('/storage/emulated/0/Download');
-      final fileName =
-          "giao_dich_${selectedMonths.map((m) => DateFormat('MM_yyyy').format(m)).join('_')}.pdf";
+      final fileName = "SaoKe_${DateFormat('yyyyMMdd_HHmm').format(DateTime.now())}.pdf";
       final filePath = '${downloadsDir.path}/$fileName';
 
       final outFile = File(filePath);
       await outFile.writeAsBytes(await pdf.save());
 
       setState(() {
-        savedPath = filePath;
         isExporting = false;
-
-        // 👉 Reset về trạng thái ban đầu
+        savedPath = filePath;
         selectedMonths.clear();
         previewTransactions.clear();
       });
 
-      await OpenFile.open(filePath);
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: const Text('✅ Đã lưu file PDF vào thư mục Download!'),
+        action: SnackBarAction(label: 'MỞ', onPressed: () => OpenFile.open(filePath)),
+      ));
     } catch (e) {
       setState(() => isExporting = false);
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text("❌ Lỗi khi tạo file PDF: $e")),
-      );
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("❌ Lỗi khi tạo PDF: $e")));
     }
   }
 
   @override
   Widget build(BuildContext context) {
-    final monthChips = selectedMonths.map((m) {
-      final label = DateFormat('MM/yyyy').format(m);
-      return Chip(
-        label: Text(label),
-        onDeleted: () {
-          setState(() {
-            selectedMonths.remove(m);
-            previewTransactions = previewTransactions.where((tx) =>
-                selectedMonths.any((mm) =>
-                tx.time.year == mm.year && tx.time.month == mm.month))
-                .toList();
-          });
-        },
-      );
-    }).toList();
-
     return Scaffold(
-      appBar: AppBar(title: const Text('Xuất PDF giao dịch')),
+      appBar: AppBar(title: const Text('Xuất sao kê PDF')),
       body: Padding(
         padding: const EdgeInsets.all(20),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            // 🔹 Nút mở file gần nhất
-            if (savedPath != null) ...[
-              ElevatedButton.icon(
-                onPressed: () async {
-                  if (savedPath != null) {
-                    await OpenFile.open(savedPath!);
-                  }
-                },
-                icon: const Icon(Icons.open_in_new),
-                label: const Text("Mở file gần nhất"),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: Colors.blueAccent,
-                  foregroundColor: Colors.white,
-                  shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(12)),
-                  padding: const EdgeInsets.symmetric(vertical: 14),
-                  textStyle: const TextStyle(fontSize: 16),
-                ),
-              ),
-              const SizedBox(height: 20),
-            ],
-
-            // 🔹 Nút chọn tháng
             ElevatedButton.icon(
               onPressed: _pickMonth,
-              icon: const Icon(Icons.edit_calendar),
-              label: const Text("Chọn tháng"),
-              style: ElevatedButton.styleFrom(
-                padding: const EdgeInsets.symmetric(vertical: 16),
-                textStyle: const TextStyle(fontSize: 16),
-                shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(12)),
+              icon: const Icon(Icons.calendar_month),
+              label: const Text("Chọn tháng sao kê"),
+            ),
+            const SizedBox(height: 16),
+            Wrap(
+              spacing: 8,
+              children: selectedMonths.map((m) => Chip(
+                label: Text(DateFormat('MM/yyyy').format(m)),
+                onDeleted: () {
+                  setState(() => selectedMonths.remove(m));
+                  _loadPreviewData();
+                },
+              )).toList(),
+            ),
+            const Divider(height: 32),
+            if (previewTransactions.isNotEmpty)
+              const Text("Xem trước dữ liệu:", style: TextStyle(fontWeight: FontWeight.bold)),
+            Expanded(
+              child: previewTransactions.isEmpty
+                  ? const Center(child: Text("Chọn tháng để xem trước dữ liệu."))
+                  : ListView.builder(
+                itemCount: previewTransactions.length,
+                itemBuilder: (context, index) {
+                  final tx = previewTransactions[index];
+                  final isIncome = tx.type == TransactionType.income;
+                  return Card(
+                    margin: const EdgeInsets.symmetric(vertical: 4),
+                    child: ListTile(
+                      leading: Icon(
+                        isIncome ? Icons.arrow_downward : Icons.arrow_upward,
+                        color: isIncome ? Colors.green : Colors.red,
+                      ),
+                      title: Text(
+                        "${isIncome ? '+' : '-'} ${NumberFormat.currency(locale: 'vi_VN', symbol: '₫').format(tx.amount)}",
+                        style: const TextStyle(fontWeight: FontWeight.bold),
+                      ),
+                      subtitle: Text("STK: ${tx.accountNumber}"),
+                    ),
+                  );
+                },
               ),
             ),
-
-            const SizedBox(height: 20),
-            if (monthChips.isNotEmpty)
-              Wrap(spacing: 8, children: monthChips)
-            else
-              const Text(
-                "Hãy chọn tháng sao kê",
-                style: TextStyle(fontSize: 16, fontWeight: FontWeight.w500),
-              ),
-            const SizedBox(height: 20),
-
-            // ...
-            if (selectedMonths.isNotEmpty)
-              Expanded(
-                child: previewTransactions.isEmpty
-                    ? Center(
-                  child: Text(
-                    "Tháng ${DateFormat('MM/yyyy').format(selectedMonths.last)} chưa có giao dịch nào.",
-                    style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w500),
-                  ),
-                )
-                    : ListView.builder(
-                  itemCount: previewTransactions.length,
-                  itemBuilder: (context, index) {
-                    final tx = previewTransactions[index];
-                    return Card(
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(10),
-                      ),
-                      elevation: 2,
-                      margin: const EdgeInsets.symmetric(vertical: 6),
-                      child: ListTile(
-                        leading: const Icon(Icons.monetization_on,
-                            color: Colors.green),
-                        title: Text(
-                          NumberFormat.currency(locale: 'vi_VN', symbol: '₫')
-                              .format(tx.amount),
-                          style: const TextStyle(
-                              fontWeight: FontWeight.bold, fontSize: 15),
-                        ),
-                        subtitle: Text(
-                          "${tx.senderName} | ${tx.bankName}\n${DateFormat('dd/MM/yyyy HH:mm').format(tx.time)}",
-                        ),
-                      ),
-                    );
-                  },
-                ),
-              ),
-            const SizedBox(height: 20),
+            const SizedBox(height: 16),
             if (previewTransactions.isNotEmpty)
               ElevatedButton.icon(
                 onPressed: isExporting ? null : _exportPdf,
-                icon: const Icon(Icons.picture_as_pdf),
-                label: const Text('Xuất PDF'),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: Colors.red[600],
-                  foregroundColor: Colors.white,
-                  padding: const EdgeInsets.symmetric(vertical: 16),
-                  textStyle: const TextStyle(fontSize: 16),
-                  shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(12)),
-                ),
+                icon: isExporting
+                    ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
+                    : const Icon(Icons.picture_as_pdf),
+                label: Text(isExporting ? 'Đang xử lý...' : 'Tạo và Lưu File PDF'),
               ),
-
-            if (isExporting) ...[
-              const SizedBox(height: 20),
-              const Center(child: CircularProgressIndicator()),
-              const SizedBox(height: 10),
-              const Text("Đang tạo file PDF...", textAlign: TextAlign.center),
-            ] else if (savedPath != null) ...[
-              const SizedBox(height: 10),
-              const Text(
-                '✅ Lưu file thành công!',
-                textAlign: TextAlign.center,
-                style: TextStyle(fontSize: 14),
-              ),
-            ]
           ],
         ),
       ),
